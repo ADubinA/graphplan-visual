@@ -7,7 +7,8 @@ gp.create_problem("examples/block-world/domain.pddl",
 
 # gp.expand_level()
 print(gp.solve())
-# gp.visualize()
+fig = gp.visualize()
+fig.show()
 print(len(gp.graphplan.graph.levels))
 # for i in range(100):
 #     gp.expand_level()

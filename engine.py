@@ -113,19 +113,29 @@ class GraphPlanVis:
         self.negkb = FolKB([])
         self.graphplan = None
         self.nx_graph = nx.DiGraph()
+        self.is_ready = False
 
-    def visualize(self):
+    def visualize(self, ax=None, for_qt=True):
+
         self.nx_graph = nx.DiGraph()
         self._create_nx_graph()
-        self.draw_graph(len(self.graphplan.graph.levels))
+        self.draw_graph(len(self.graphplan.graph.levels), ax=ax)
+        if for_qt:
+            return ax
+        else:
+            plt.show()
 
     def create_problem(self, domain_file_path, problem_file_path):
+
         self.domprob = pddlpy.DomainProblem(domain_file_path, problem_file_path)
+
         self.pddl = to_pddl_aima_obj(self.domprob)
         # self.pddl = three_block_tower()
         self.negkb = FolKB([])
         self.graphplan = MyGraphPlan(self.pddl, self.negkb)
         self.nx_graph = nx.DiGraph()
+        self.is_ready = True
+
 
     def expand_level(self):
         self.graphplan.graph.expand_graph()
@@ -241,9 +251,11 @@ class GraphPlanVis:
         self.nx_graph.add_edge(node1, node2)
 
     def _create_node_name(self, node_type, name, level_num):
+        if name.op == 'Persistence':
+            name.op = "P-"
         return f"{level_num}_{name}_{node_type}"
 
-    def draw_graph(self, max_level):
+    def draw_graph(self, max_level, ax=None):
 
         nodes_to_draw = [node for node in self.nx_graph.nodes if self.is_to_draw(node)]
         edges_to_draw = [edge for edge in self.nx_graph.edges if edge[0] in nodes_to_draw and edge[1] in nodes_to_draw]
@@ -267,13 +279,13 @@ class GraphPlanVis:
         pos = self.graphplan_layout(nodes_array, max_level)
 
         # nx.draw_networkx_nodes(self.nx_graph, pos, nodes_to_draw)
-        self._draw_nx_nodes(nodes_array,pos)
-        nx.draw_networkx_edges(self.nx_graph, pos, edges_to_draw)
-        nx.draw_networkx_labels(self.nx_graph, pos, labels=labels_to_draw)
+        self._draw_nx_nodes(nodes_array,pos, ax=ax)
+        nx.draw_networkx_edges(self.nx_graph, pos, edges_to_draw, ax=ax)
+        nx.draw_networkx_labels(self.nx_graph, pos, labels=labels_to_draw,ax=ax)
         # nx.draw(self.nx_graph, pos, node_size=300, node_color='#ffaaaa', with_labels=True)
-        plt.show()
+        # plt.show()
 
-    def _draw_nx_nodes(self, nodes_array, pos):
+    def _draw_nx_nodes(self, nodes_array, pos, ax=None):
         for node_array in nodes_array:
 
             pos_state_nodes = [node for node in node_array["state"]
@@ -281,13 +293,13 @@ class GraphPlanVis:
             neg_state_nodes = [node for node in node_array["state"]
                                if self.nx_graph.nodes[node]["node_type"] == "neg_state"]
 
-            nx.draw_networkx_nodes(self.nx_graph, pos, pos_state_nodes,node_color="green")
-            nx.draw_networkx_nodes(self.nx_graph, pos, neg_state_nodes, node_color="red")
+            nx.draw_networkx_nodes(self.nx_graph, pos, pos_state_nodes,node_color="green",ax=ax)
+            nx.draw_networkx_nodes(self.nx_graph, pos, neg_state_nodes, node_color="red",ax=ax)
 
             # draw action nodes
-            nx.draw_networkx_nodes(self.nx_graph, pos, node_array["action"],node_shape="s")
-
-    def graphplan_layout(self, nodes_array, max_level):
+            nx.draw_networkx_nodes(self.nx_graph, pos, node_array["action"],node_shape="s",ax=ax)
+    @staticmethod
+    def graphplan_layout(nodes_array, max_level):
         """
         create a graphplan positioning for the nodes
         :param nodes_array: an array of the form
@@ -313,6 +325,28 @@ class GraphPlanVis:
                         pos[node] = ((level_index)/max_level, node_index/len(nodes_array[level_index][node_type]))
 
         return pos
+
+    @staticmethod
+    def format_solution(solution_array):
+        if not solution_array:
+            return "No solution found!"
+        solution_string = "Solution found and is of the following:\n"
+        level = 1
+        solution_array = solution_array[0]
+        for solution_level in solution_array:
+            solution_string += f"{level}:"
+            for action in solution_level:
+                if "P-" in str(action):
+                    continue
+
+                solution_string += str(action)
+                solution_string += ", "
+            solution_string = solution_string[:-2]
+            solution_string += "\n"
+
+            level += 1
+
+        return solution_string
 
     def is_to_draw(self, node):
         """
