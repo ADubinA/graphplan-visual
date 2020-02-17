@@ -24,6 +24,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, *args, **kwargs):
         super(MainWindow, self).__init__(*args, **kwargs)
         self.gp = engine.GraphPlanVis()
+
         self.fig_width = 5
         self.fig_height = 4
         self.mpl = MplCanvas(parent=self, fig=Figure())
@@ -39,10 +40,68 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._construct_top_menu()
         self._construct_main_menu()
+        cid = self.mpl.figure.canvas.mpl_connect('button_press_event', self._onclick)
+
         self.show()
         if DEBUG:
             self._try_start_graph_plan()
             self.action_expand_level()
+
+        self.mutex_mode = False
+        self.first_action = None
+        self.second_action = None
+
+    def _onclick(self, event):
+        if not self.mutex_mode:
+            return
+
+        clicked = min(self.gp.pos.items(), key=
+        lambda x: pow(x[1][0]-event.xdata, 2) + pow(x[1][1]-event.ydata, 2))
+
+        # print(clicked)
+        # print('%s click: button=%d, x=%d, y=%d, xdata=%f, ydata=%f' %
+        #       ('double' if event.dblclick else 'single', event.button,
+        #        event.x, event.y, event.xdata, event.ydata))
+
+        if not self.first_action:
+            self.first_action = clicked[0]
+
+        elif not self.second_action:
+            self.second_action = clicked[0]
+
+        self._after_mutex_press()
+
+    def _after_mutex_press(self):
+        if not self.first_action or not self.second_action:
+            return
+
+        is_mutex = self.gp.is_nx_graph_mutex(self.first_action,self.second_action)
+
+        first_action = self.gp.nx_graph.nodes[self.first_action]
+        second_action = self.gp.nx_graph.nodes[self.second_action]
+        first_action_name = first_action["name"]
+        second_action_name = second_action["name"]
+
+        result_string = f"The actions:\n {first_action_name}\n {second_action_name} \n"
+        if is_mutex:
+            result_string += "are a mutex"
+        else:
+            result_string += "are not a mutex"
+
+        if first_action["node_type"] != "action" or second_action["node_type"] != "action":
+            result_string = "You are in mutex select mode.\n Please only click on action nodes."
+
+        elif first_action["level_num"] != second_action["level_num"]:
+            result_string = "Actions on different levels can't be mutex."
+
+        self.first_action = None
+        self.second_action = None
+
+        ms = QtWidgets.QMessageBox()
+        ms.setText(result_string)
+        ms.exec_()
+
+
 
     def _construct_main_menu(self, fig=None):
 
@@ -99,6 +158,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.menuBar().addMenu(self.help_menu)
 
         self.help_menu.addAction('&About', self.about)
+
     def closeEvent(self, ce):
         self.file_quit()
 
@@ -125,9 +185,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.gp.expand_level()
         self._refresh_graph_view()
 
-
-        # TODO refresh
-
     def action_solve(self):
         if not self.gp.is_ready:
             return
@@ -136,12 +193,12 @@ class MainWindow(QtWidgets.QMainWindow):
         ms = QtWidgets.QMessageBox()
         ms.setText(solution_string)
         ms.exec_()
-        pass
 
     def action_expand_and_solve(self):
         if not self.gp.is_ready:
             return
         solution = self.gp.solve()
+        self._refresh_graph_view()
         solution_string = self.gp.format_solution(solution)
         ms = QtWidgets.QMessageBox()
         ms.setText(solution_string)
@@ -149,18 +206,18 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def action_reset_graph(self):
 
-        # TODO this
-        pass
+        self.gp = engine.GraphPlanVis()
+        self._set_empty_plot()
+        self._try_start_graph_plan()
 
     def view_mutexes(self):
         if not self.gp.is_ready:
             return
-        # TODO this
-        pass
+        # self.gp.draw_graph_mutexes(self.mpl.axes)
+        self.mutex_mode = not self.mutex_mode
 
     def show_no_ops(self):
-        # TODO this
-        pass
+        raise  NotImplementedError
 
     def _try_start_graph_plan(self):
         try:
@@ -173,7 +230,6 @@ class MainWindow(QtWidgets.QMainWindow):
             error_dialog = QtWidgets.QErrorMessage()
             error_dialog.showMessage(e)
 
-
     def _load_file(self):
         options = QtWidgets.QFileDialog.Options()
         options |= QtWidgets.QFileDialog.DontUseNativeDialog
@@ -184,10 +240,9 @@ class MainWindow(QtWidgets.QMainWindow):
             error_dialog.showMessage('file is not a .pddl format!')
         return file_path
 
-    # def _set_empty_plot(self):
-    #     ax = Figure(figsize=(self.fig_width, self.fig_width), dpi=200)
-    #     self.mpl.figure = ax
-    #     self._refresh_figure()
+    def _set_empty_plot(self):
+        self.mpl.axes.cla()
+        self._refresh_figure()
 
     def _refresh_figure(self):
 

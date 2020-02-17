@@ -15,6 +15,7 @@ class MyGraphPlan:
         self.graph = Graph(pddl, negkb)
         self.nogoods = []
         self.solution = []
+        self.pos = None
 
     def check_leveloff(self):
         first_check = (set(self.graph.levels[-1].current_state_pos) ==
@@ -243,23 +244,24 @@ class GraphPlanVis:
         :return: the hash name of the node
         """
         node_name = self._create_node_name(node_type, state_name, level_num)
+        name_change = str(state_name).replace("Persistence","P")
+
         self.nx_graph.add_node(node_name, name=state_name, node_type=node_type,
-                          level_num=level_num)
+                          level_num=level_num,display_name=name_change)
         return node_name
 
     def _add_edge(self, node1, node2, level_num, **kwargs):
         self.nx_graph.add_edge(node1, node2)
 
     def _create_node_name(self, node_type, name, level_num):
-        if name.op == 'Persistence':
-            name.op = "P-"
-        return f"{level_num}_{name}_{node_type}"
+        name_change = str(name).replace("Persistence","P")
+        return f"{level_num}_{name_change}_{node_type}"
 
     def draw_graph(self, max_level, ax=None):
 
         nodes_to_draw = [node for node in self.nx_graph.nodes if self.is_to_draw(node)]
         edges_to_draw = [edge for edge in self.nx_graph.edges if edge[0] in nodes_to_draw and edge[1] in nodes_to_draw]
-        labels_to_draw = {node: self.nx_graph.nodes[node]["name"] for node in self.nx_graph.nodes if node in nodes_to_draw}
+        labels_to_draw = {node: self.nx_graph.nodes[node]["display_name"] for node in self.nx_graph.nodes if node in nodes_to_draw}
         # iterate over nodes
         nodes_array = []
         for node in self.nx_graph.nodes:
@@ -277,13 +279,51 @@ class GraphPlanVis:
                     nodes_array[node_level]["state"].append(node)
 
         pos = self.graphplan_layout(nodes_array, max_level)
-
+        self.pos = pos
         # nx.draw_networkx_nodes(self.nx_graph, pos, nodes_to_draw)
         self._draw_nx_nodes(nodes_array,pos, ax=ax)
         nx.draw_networkx_edges(self.nx_graph, pos, edges_to_draw, ax=ax)
         nx.draw_networkx_labels(self.nx_graph, pos, labels=labels_to_draw,ax=ax)
         # nx.draw(self.nx_graph, pos, node_size=300, node_color='#ffaaaa', with_labels=True)
         # plt.show()
+
+    def draw_graph_mutexes(self, ax, nx_nodes=None):
+        if not nx_nodes:
+            nx_nodes = [node for node in self.nx_graph.nodes.keys()
+                        if self.nx_graph.nodes[node]["node_type"]=="action"]
+
+        nodes_pairs = list(itertools.combinations(nx_nodes, 2))
+
+        mutex_pairs = []
+        for nodes_pair in nodes_pairs:
+            if self.is_nx_graph_mutex(nodes_pair[0], nodes_pair[1]):
+                mutex_pairs.append(nodes_pair)
+
+        nx.draw_networkx_edges(self.nx_graph, self.pos, mutex_pairs, ax=ax,
+                               style="dashed", edge_color="red")
+        return mutex_pairs
+
+    def is_nx_graph_mutex(self,node1, node2):
+
+        node_1_data = self.nx_graph.nodes[node1]
+        node_2_data = self.nx_graph.nodes[node2]
+
+        if node_1_data["level_num"] != node_2_data["level_num"]:
+            return False
+
+        current_level = self.graphplan.graph.levels[node_1_data["level_num"]-1]
+
+        for mut in current_level.mutex:
+            if len(mut) != 2:
+                continue
+            mut = list(mut)
+
+            if ((node_1_data["name"] == mut[0] and node_2_data["name"] == mut[1]) or
+                (node_1_data["name"] == mut[1] and node_2_data["name"] == mut[0])):
+                return True
+
+        return False
+
 
     def _draw_nx_nodes(self, nodes_array, pos, ax=None):
         for node_array in nodes_array:
@@ -298,6 +338,7 @@ class GraphPlanVis:
 
             # draw action nodes
             nx.draw_networkx_nodes(self.nx_graph, pos, node_array["action"],node_shape="s",ax=ax)
+
     @staticmethod
     def graphplan_layout(nodes_array, max_level):
         """
